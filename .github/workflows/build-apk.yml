@@ -1,0 +1,63 @@
+name: Build Android
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Create signing key
+        run: |
+          PASS="$(openssl rand -hex 12)"
+          echo "KEYSTORE_PASS=$PASS" >> "$GITHUB_ENV"
+          keytool -genkeypair -keystore appforge.jks -alias appforge \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$PASS" -keypass "$PASS" \
+            -dname "CN=AppForge, O=AppForge, C=KH"
+
+      - name: Save signing key
+        run: |
+          echo "alias: appforge" > keystore-info.txt
+          echo "storePassword: $KEYSTORE_PASS" >> keystore-info.txt
+          echo "keyPassword: $KEYSTORE_PASS" >> keystore-info.txt
+          echo "file: appforge.jks" >> keystore-info.txt
+
+      - name: Upload signing key
+        uses: actions/upload-artifact@v4
+        with:
+          name: aabcheck-keystore
+          path: |
+            appforge.jks
+            keystore-info.txt
+          if-no-files-found: error
+
+      - name: Build AAB
+        run: gradle bundleRelease --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aabcheck-apk
+          path: app/build/outputs/apk/*/*.apk
+          if-no-files-found: ignore
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: aabcheck-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
